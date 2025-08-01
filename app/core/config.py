@@ -1,46 +1,170 @@
-from typing import List, Optional
-from pydantic import BaseSettings, validator
-from pydantic_settings import BaseSettings
+# app/core/config.py
+from typing import List, Optional, Any, Dict
+from pydantic import BaseSettings, validator, PostgresDsn
 import secrets
+import os
 
 
 class Settings(BaseSettings):
-    # API
+    # API Configuration
     API_V1_STR: str = "/api/v1"
     PROJECT_NAME: str = "Learning App API"
     PROJECT_VERSION: str = "1.0.0"
+    PROJECT_DESCRIPTION: str = "API para aplicación de aprendizaje tipo Duolingo"
     
     # Security
     SECRET_KEY: str = secrets.token_urlsafe(32)
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     
-    # Database
-    DATABASE_URL: str
-    DATABASE_URL_SYNC: str
+    # Database Configuration
+    DATABASE_URL: Optional[str] = None
+    DATABASE_URL_SYNC: Optional[str] = None
+    
+    # Database connection components (for building URLs)
+    POSTGRES_HOST: str = "localhost"
+    POSTGRES_PORT: int = 5432
+    POSTGRES_USER: str = "postgres"
+    POSTGRES_PASSWORD: str = "password"
+    POSTGRES_DB: str = "learning_app"
     
     # Environment
     ENVIRONMENT: str = "development"
     DEBUG: bool = True
+    TESTING: bool = False
     
-    # CORS
+    # CORS Configuration
     ALLOWED_HOSTS: List[str] = ["localhost", "127.0.0.1"]
     ALLOWED_ORIGINS: List[str] = ["http://localhost:3000"]
+    ALLOWED_METHODS: List[str] = ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"]
+    ALLOWED_HEADERS: List[str] = ["*"]
     
     # Logging
     LOG_LEVEL: str = "INFO"
+    LOG_FORMAT: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    
+    # Rate Limiting
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_REQUESTS: int = 100
+    RATE_LIMIT_WINDOW: int = 60  # seconds
+    
+    # File Upload
+    MAX_FILE_SIZE: int = 5 * 1024 * 1024  # 5MB
+    ALLOWED_FILE_TYPES: List[str] = ["image/jpeg", "image/png", "image/gif", "audio/mpeg", "audio/wav"]
+    UPLOAD_DIRECTORY: str = "uploads"
+    
+    # Cache Configuration
+    REDIS_URL: Optional[str] = None
+    CACHE_TTL: int = 300  # 5 minutes
+    
+    # Email Configuration (para futuras funcionalidades)
+    SMTP_HOST: Optional[str] = None
+    SMTP_PORT: int = 587
+    SMTP_USER: Optional[str] = None
+    SMTP_PASSWORD: Optional[str] = None
+    EMAILS_FROM_EMAIL: Optional[str] = None
+    EMAILS_FROM_NAME: str = "Learning App"
+    
+    @validator("DATABASE_URL", pre=True)
+    def assemble_db_connection(cls, v: Optional[str], values: Dict[str, Any]) -> str:
+        """Construir URL de base de datos asíncrona si no se proporciona."""
+        if isinstance(v, str) and v:
+            return v
+        
+        return PostgresDsn.build(
+            scheme="postgresql+asyncpg",
+            user=values.get("POSTGRES_USER"),
+            password=values.get("POSTGRES_PASSWORD"),
+            host=values.get("POSTGRES_HOST"),
+            port=str(values.get("POSTGRES_PORT")),
+            path=f"/{values.get('POSTGRES_DB') or ''}",
+        )
+    
+    @validator("DATABASE_URL_SYNC", pre=True)
+    def assemble_db_connection_sync(cls, v: Optional[str], values: Dict[str, Any]) -> str:
+        """Construir URL de base de datos síncrona si no se proporciona."""
+        if isinstance(v, str) and v:
+            return v
+        
+        return PostgresDsn.build(
+            scheme="postgresql",
+            user=values.get("POSTGRES_USER"),
+            password=values.get("POSTGRES_PASSWORD"),
+            host=values.get("POSTGRES_HOST"),
+            port=str(values.get("POSTGRES_PORT")),
+            path=f"/{values.get('POSTGRES_DB') or ''}",
+        )
     
     @validator("ALLOWED_ORIGINS", pre=True)
     def assemble_cors_origins(cls, v: str | List[str]) -> List[str]:
+        """Parsear orígenes CORS desde string o lista."""
         if isinstance(v, str) and not v.startswith("["):
             return [i.strip() for i in v.split(",")]
         elif isinstance(v, (list, str)):
             return v
         raise ValueError(v)
     
+    @property
+    def is_development(self) -> bool:
+        """Verificar si estamos en desarrollo."""
+        return self.ENVIRONMENT.lower() == "development"
+    
+    @property
+    def is_production(self) -> bool:
+        """Verificar si estamos en producción."""
+        return self.ENVIRONMENT.lower() == "production"
+    
+    @property
+    def is_testing(self) -> bool:
+        """Verificar si estamos en testing."""
+        return self.TESTING or self.ENVIRONMENT.lower() == "testing"
+    
+    def get_database_url(self, async_driver: bool = True) -> str:
+        """Obtener URL de base de datos según el driver."""
+        return self.DATABASE_URL if async_driver else self.DATABASE_URL_SYNC
+    
     class Config:
         env_file = ".env"
         case_sensitive = True
+        # Permitir que las variables de entorno sobrescriban los valores
+        env_file_encoding = "utf-8"
 
 
+# Instancia global de configuración
 settings = Settings()
+
+# Configuración para diferentes entornos
+class DevelopmentSettings(Settings):
+    DEBUG: bool = True
+    LOG_LEVEL: str = "DEBUG"
+
+
+class ProductionSettings(Settings):
+    DEBUG: bool = False
+    LOG_LEVEL: str = "WARNING"
+    RATE_LIMIT_REQUESTS: int = 1000
+
+
+class TestingSettings(Settings):
+    DEBUG: bool = True
+    TESTING: bool = True
+    LOG_LEVEL: str = "DEBUG"
+    # Override database for testing
+    POSTGRES_DB: str = "learning_app_test"
+
+
+def get_settings() -> Settings:
+    """Factory para obtener configuración según el entorno."""
+    environment = os.getenv("ENVIRONMENT", "development").lower()
+    
+    if environment == "production":
+        return ProductionSettings()
+    elif environment == "testing":
+        return TestingSettings()
+    else:
+        return DevelopmentSettings()
+
+
+# Usar la factory en lugar de la instancia directa
+settings = get_settings()

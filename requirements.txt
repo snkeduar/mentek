@@ -6,13 +6,15 @@ uvicorn[standard]==0.24.0
 sqlalchemy==2.0.23
 asyncpg==0.29.0
 alembic==1.12.1
+psycopg2-binary==2.9.9
 
 # Autenticación y seguridad
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 python-multipart==0.0.6
+cryptography==41.0.7
 
-# Configuración
+# Configuración y validación
 pydantic==2.5.0
 pydantic-settings==2.1.0
 python-decouple==3.8
@@ -24,3 +26,19 @@ httpx==0.25.2
 
 # Logging y monitoreo
 structlog==23.2.0
+
+# Middleware y CORS
+starlette==0.27.0
+
+# Manejo de fechas y tiempo
+python-dateutil==2.8.2
+
+# Para archivos y uploads
+aiofiles==23.2.1
+python-magic==0.4.27
+
+# JSON y serialización
+orjson==3.9.10
+
+# Variables de entorno
+python-dotenv==1.0.0
