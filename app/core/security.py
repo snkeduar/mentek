@@ -494,7 +494,7 @@ def validate_email_format(email: str) -> bool:
     """
     import re
     
-    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
     
     return bool(re.match(pattern, email))
 
@@ -519,7 +519,7 @@ def validate_username_format(username: str) -> Dict[str, Any]:
     
     # Caracteres permitidos
     import re
-    if not re.match(r'^[a-zA-Z0-9_.-]+
+    if not re.match(r'^[a-zA-Z0-9_.-]+'
     , username):
         errors.append("El nombre de usuario solo puede contener letras, números, guiones, puntos y guiones bajos")
     

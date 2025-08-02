@@ -1,11 +1,18 @@
 # app/core/config.py
-from typing import List, Optional, Any, Dict
-from pydantic import BaseSettings, validator, PostgresDsn
+from typing import List, Optional, Union
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator
 import secrets
 import os
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=True,
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
     # API Configuration
     API_V1_STR: str = "/api/v1"
     PROJECT_NAME: str = "Learning App API"
@@ -18,11 +25,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     
-    # Database Configuration
-    DATABASE_URL: Optional[str] = None
-    DATABASE_URL_SYNC: Optional[str] = None
-    
-    # Database connection components (for building URLs)
+    # Database connection components
     POSTGRES_HOST: str = "localhost"
     POSTGRES_PORT: int = 5432
     POSTGRES_USER: str = "postgres"
@@ -58,7 +61,7 @@ class Settings(BaseSettings):
     REDIS_URL: Optional[str] = None
     CACHE_TTL: int = 300  # 5 minutes
     
-    # Email Configuration (para futuras funcionalidades)
+    # Email Configuration
     SMTP_HOST: Optional[str] = None
     SMTP_PORT: int = 587
     SMTP_USER: Optional[str] = None
@@ -66,44 +69,33 @@ class Settings(BaseSettings):
     EMAILS_FROM_EMAIL: Optional[str] = None
     EMAILS_FROM_NAME: str = "Learning App"
     
-    @validator("DATABASE_URL", pre=True)
-    def assemble_db_connection(cls, v: Optional[str], values: Dict[str, Any]) -> str:
-        """Construir URL de base de datos asíncrona si no se proporciona."""
-        if isinstance(v, str) and v:
-            return v
-        
-        return PostgresDsn.build(
-            scheme="postgresql+asyncpg",
-            user=values.get("POSTGRES_USER"),
-            password=values.get("POSTGRES_PASSWORD"),
-            host=values.get("POSTGRES_HOST"),
-            port=str(values.get("POSTGRES_PORT")),
-            path=f"/{values.get('POSTGRES_DB') or ''}",
-        )
+    # Database URLs - se pueden proporcionar directamente o se construyen automáticamente
+    ENV_DATABASE_URL: Optional[str] = None
+    ENV_DATABASE_URL_SYNC: Optional[str] = None
     
-    @validator("DATABASE_URL_SYNC", pre=True)
-    def assemble_db_connection_sync(cls, v: Optional[str], values: Dict[str, Any]) -> str:
-        """Construir URL de base de datos síncrona si no se proporciona."""
-        if isinstance(v, str) and v:
-            return v
-        
-        return PostgresDsn.build(
-            scheme="postgresql",
-            user=values.get("POSTGRES_USER"),
-            password=values.get("POSTGRES_PASSWORD"),
-            host=values.get("POSTGRES_HOST"),
-            port=str(values.get("POSTGRES_PORT")),
-            path=f"/{values.get('POSTGRES_DB') or ''}",
-        )
-    
-    @validator("ALLOWED_ORIGINS", pre=True)
-    def assemble_cors_origins(cls, v: str | List[str]) -> List[str]:
+    @field_validator("ALLOWED_ORIGINS", mode='before')
+    @classmethod
+    def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
         """Parsear orígenes CORS desde string o lista."""
         if isinstance(v, str) and not v.startswith("["):
             return [i.strip() for i in v.split(",")]
         elif isinstance(v, (list, str)):
             return v
         raise ValueError(v)
+    
+    @property
+    def DATABASE_URL(self) -> str:
+        """Construir URL de base de datos asíncrona."""
+        if self.ENV_DATABASE_URL:
+            return self.ENV_DATABASE_URL
+        return f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+    
+    @property
+    def DATABASE_URL_SYNC(self) -> str:
+        """Construir URL de base de datos síncrona."""
+        if self.ENV_DATABASE_URL_SYNC:
+            return self.ENV_DATABASE_URL_SYNC
+        return f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
     
     @property
     def is_development(self) -> bool:
@@ -123,16 +115,7 @@ class Settings(BaseSettings):
     def get_database_url(self, async_driver: bool = True) -> str:
         """Obtener URL de base de datos según el driver."""
         return self.DATABASE_URL if async_driver else self.DATABASE_URL_SYNC
-    
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
-        # Permitir que las variables de entorno sobrescriban los valores
-        env_file_encoding = "utf-8"
 
-
-# Instancia global de configuración
-settings = Settings()
 
 # Configuración para diferentes entornos
 class DevelopmentSettings(Settings):
@@ -150,7 +133,6 @@ class TestingSettings(Settings):
     DEBUG: bool = True
     TESTING: bool = True
     LOG_LEVEL: str = "DEBUG"
-    # Override database for testing
     POSTGRES_DB: str = "learning_app_test"
 
 
@@ -166,5 +148,5 @@ def get_settings() -> Settings:
         return DevelopmentSettings()
 
 
-# Usar la factory en lugar de la instancia directa
+# Usar la factory
 settings = get_settings()
