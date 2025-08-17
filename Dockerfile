@@ -1,19 +1,39 @@
+# Dockerfile
 FROM python:3.11-slim
 
+# Establecer variables de entorno
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    POETRY_NO_INTERACTION=1 \
+    POETRY_VENV_IN_PROJECT=1 \
+    POETRY_CACHE_DIR=/tmp/poetry_cache
+
+# Establecer directorio de trabajo
 WORKDIR /app
 
-# Instala dependencias del sistema y Alembic
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc python3-dev libpq-dev && \
-    rm -rf /var/lib/apt/lists/* && \
-    pip install alembic
+# Instalar dependencias del sistema
+RUN apt-get update && apt-get install -y \
+    gcc \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copia requirements y instala dependencias Python
+# Copiar archivo de requirements
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
 
-# Copia el proyecto (incluyendo alembic.ini y la carpeta alembic)
-COPY . .
+# Instalar dependencias de Python
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
-# Comando para iniciar (ejecuta migraciones y luego la app)
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"]
+# Copiar código de la aplicación
+COPY ./app /app/app
+
+# Crear usuario no root
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+RUN chown -R appuser:appuser /app
+USER appuser
+
+# Exponer puerto
+EXPOSE 8000
+
+# Comando para ejecutar la aplicación
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
